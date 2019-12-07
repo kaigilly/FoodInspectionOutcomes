@@ -1,0 +1,50 @@
+---
+title: "Exploration"
+author: "Matty Samach"
+date: "11/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r violations}
+library(ggplot2)
+library(dplyr)
+
+#setwd("Dropbox/Documents/CMU/Classes/Fall 2019/Applied ML/Project/Data/Restaurants")
+
+violations = read.csv("Data/Restaurants/RestaurantViolations.csv")
+violations_per_inspection = violations %>% group_by(encounter) %>% summarize(count = n())
+
+hist(violations_per_inspection$count)
+
+violation_cats = violations %>% 
+  group_by(description_new) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(category = description_new,
+         number = count) %>% 
+  arrange(desc(number))
+
+ggplot(data = violation_cats, mapping = aes(x = reorder(category, number), y = number)) +
+  geom_bar(stat = "identity") +
+  coord_flip()
+```
+```{r inspections}
+inspections = read.csv("Data/Restaurants/RestaurantInspections.csv")
+
+inspection_outcomes = inspections %>% 
+  group_by(placard_desc) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(outcome = placard_desc,
+         number = count)
+
+ggplot(data = inspection_outcomes, mapping = aes(x=reorder(outcome, number), y = number)) +
+  geom_bar(stat = "identity") +
+  coord_flip()
+```
+

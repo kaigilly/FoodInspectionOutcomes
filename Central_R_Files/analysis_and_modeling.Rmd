@@ -1,0 +1,503 @@
+---
+title: "Analysis and Modeling"
+author: "Kaila Gilbert, Matt Samach"
+date: "December 4, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Model Goodies
+
+```{r Libraries and Packages}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(hms)
+library(tidyr)
+```
+
+```{r Read In Data}
+set.seed(1)
+file_path = "/Users/matty_sam/Dropbox/Documents/CMU/Classes/Fall 2019/Applied ML/Project/Data/Imputed/data1.csv"
+main_df = read.csv(file_path)
+```
+
+First, we transformed our data set to exclude a few columns that would not be pertinent to the end user (inspection agency.) We also transformed expense columsn, ordinal factor data, into continuous integers.
+```{r Light CleanUp}
+
+main_df <- main_df %>% 
+  mutate_at(vars(matches("prev")), as.factor) %>% 
+  select(-state, -morning)
+
+#Dropping the Ordinal BS
+money_df <- main_df %>% 
+  mutate_at(
+    vars(matches("Expense"), matches("Sales")),
+    funs(case_when(
+  .=="Less than $500" ~ 250,
+  .=="$500 to $1,000" ~ 750,
+  .== "Less than $1,000" ~ 500,
+  .=="$1,000 to $2,500" ~ 1750,
+  .=="$1,000 to $5,000"~3000,
+  .=="Less than $2,000"~1000,
+  .=="$2,000 to $5,000"~ 3500,
+  .=="Less than $2,500" ~1250,
+  .=="$2,500 to $5,000" ~ 3750,
+  .=="Less than $5,000"~2500,
+  .=="$5,000 to $10,000" ~ 7500,
+  .=="$1,000 to $10,000" ~ 5000,
+  .=="Less than $10,000"~5000,
+  .=="$5,000 to $20,000"~12500,
+  .=="$10,000 to $20,000" ~ 15000,
+  .=="$10,000 to $25,000" ~17500,
+  .=="$20,000 to $50,000" ~35000,
+  .=="$25,000 to $50,000" ~37500,
+  .=="Over $25,000" ~ 25000,
+  .=="$10,000 to $50,000" ~25000,
+  .=="Over $50,000" ~ 50000,
+  .=="Less than $100,000"~50000,
+  .=="$50,000 to $100,000" ~ 75000,
+  .=="Over $100,000" ~ 100000,
+  .=="$100,000 to $250,000" ~ 175000,
+  .=="Over $250,000"~250000,
+  .=="$250,000 to $500,000" ~375000,
+  .=="Less Than $500,000" ~250000,
+  .=="Over $500,000" ~ 500000,
+  .=="$500,000 to $1 Million"~750000,
+  .=="$1 to $2.5 Million"~ 1750000,
+  .=="$2.5 Million to $10 Million" ~6250000,
+  .=="Over $10 Million" ~10000000,
+  .=="$1-2.5 Million" ~1750000,
+  .=="$2.5-5 Million"~3750000,
+  .=="$20-50 Million"~35000000,
+  .=="$5-10 Million"~7500000,
+  .=="$10-20 Million" ~15000000,
+  .=="$50-100 Million" ~75000000,
+  .=="$100-500 Million" ~300000000,
+  .=="$500,000-1 Million"~750000
+  
+)))
+
+other_ords <- money_df %>% 
+  mutate_at(
+    vars(matches("Square")),
+    funs(case_when(
+    .== "1 - 1,499" ~1249,
+    .=="1,500 - 2,499"   ~1999,
+    .=="2,500 - 4,999" ~3749,
+    .=="5,000 - 9,999" ~7499,
+    .=="10,000 - 19,999" ~14999,
+    .=="20,000 - 39,999" ~29999,
+    .=="40,000 - 99,999" ~69999,
+    .=="100,000+"   ~100000
+    
+    )))
+
+emp_ords <- other_ords %>% 
+  mutate_at(
+    vars(matches("Size.Range")),
+    funs(case_when(
+  .=="1 to 4"   ~2.5,  
+  .=="5 to 9" ~7,
+  .=="10 to 19"  ~14.5, 
+  .=="20 to 49" ~34.5, 
+   .=="50 to 99"  ~74.5, 
+  .=="100 to 249" ~174.5,
+  .=="250 to 499" ~374.5,
+  .=="500 to 999" ~749.5
+)))
+
+#Make Date Continuous
+final_df <- emp_ords %>% 
+ mutate(bus_st_date=as.numeric(as.Date(emp_ords$bus_st_date) - as.Date("1900-01-01")))%>% 
+  select(-c("status","Primary.SIC.Year.Appeared", "duration")) 
+#Remove duration, since beyond regulator's decision-making
+
+#Lots of Small Businesses
+hist(final_df$num_violations)
+
+#double-check
+str(final_df)
+```
+
+
+```{r Trimming Out Rare Categories}
+
+purposes = final_df %>% 
+  group_by(purpose) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(number = count) %>% 
+  arrange(desc(number))
+
+bus_categories = final_df %>% 
+  group_by(description) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(category = description,
+         number = count) %>% 
+  arrange(desc(number))
+
+city_count = final_df %>% 
+  group_by(city) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(number = count) %>% 
+  arrange(desc(number))
+
+exec_titles = final_df %>% 
+    group_by(Executive.Title) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(number = count) %>% 
+  arrange(desc(number))
+
+bus_start_dates = final_df %>% 
+    group_by(bus_st_date) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(number = count) %>% 
+  arrange(desc(number))
+
+locations = final_df %>% 
+    group_by(Location.Type) %>% 
+  summarize(count = n()) %>% 
+  ungroup() %>% 
+  rename(number = count) %>% 
+  arrange(desc(number))
+
+  
+#Removing values with less than 5 occurences
+scarce_purposes = purposes %>% 
+  subset(number<5) 
+scarce_categories = bus_categories %>% 
+  subset(number<5)
+scarce_cities = city_count %>% 
+  subset(number<5)
+scarce_exec = exec_titles %>% 
+  subset(number <5)
+scarce_locations = locations %>% 
+  subset(number<5)
+
+final_df <- final_df %>% 
+  subset(!(purpose %in% scarce_purposes[[1]] | description %in% scarce_categories[[1]] | city %in% scarce_cities[[1]] | Executive.Title %in% scarce_exec[[1]]|Location.Type %in% scarce_locations[[1]])) %>% 
+  select(-prev..Employee.Health)
+```
+
+Outcome is EXTREMELY rare in our cleaned dataset. Of the 5,164 inspections, only 35 resulted in an abnormal inspection event. This will be a problem; thankfully, we have SMOTE to see if we an improve on any unsatisfying results. 
+
+A positive event occurs only 0.7% of the time. Doh!
+
+We now partition our data into train and test sets. We have three potential outcome varibles. One is binary: whether the restaurant is allowed to stay open. The other two are continuous: number of violations and log number of violations. We will first be looking into the continuous outcome and therefore be running regression models.
+```{r Partition Time, echo=FALSE}
+
+N= nrow(final_df)
+H = round(N/2)
+
+final_df <- final_df[sample(1:N),]  #shuffle
+
+cont_df <- final_df %>% select(-placard_desc) # placard_desc is the outcome specifying the outcome of the inspection. Removed for regression.
+co_train_set <- cont_df[1:H,] 
+co_test_set <- cont_df[(H+1):N,]
+```
+
+We begin by running a simple linear regression on the number of violations.
+
+```{r Linear Regression - Number Violations}
+# Model
+linear_reg <- lm(num_violations~., data=co_train_set %>% select(-log_violations))
+
+# Get predictions from linear regression
+lin_pred <- predict(linear_reg, co_test_set %>% select(-c(num_violations, log_violations)))
+
+# Model accuracy measure is MSE. Get linear MSE.
+lin_mse <- mean((lin_pred - co_test_set$num_violations)^2)
+
+lin_mse
+```
+
+We now use a random forest model on number of violations.
+
+```{r Random Forest Regression - Number Violations}
+library(randomForest)
+
+# Model
+lin_rf = randomForest(formula = num_violations ~ ., data=co_train_set %>% select(-log_violations), ntrees=15)
+
+# Variable Importance Plot
+ggplot(data=lin_rf$importance %>% as.data.frame() %>%
+         mutate(name=as.factor(rownames(.))) %>%
+         mutate(name=factor(name, name))) +
+  geom_bar(aes(x=reorder(name, lin_rf$importance), y=lin_rf$importance), stat="identity") + coord_flip()
+
+# RF predictions
+lin_rf_pred <- predict(lin_rf, co_test_set %>% select(-c(log_violations, num_violations)), n.trees=15)
+
+# Get MSE for RF model
+rf_lin_mse <- mean((lin_rf_pred - co_test_set$num_violations)^2)
+
+rf_lin_mse
+```
+
+The random forest model far outperforms the baseline linear regression slightly The MSE of the former is 9.575582 while the latter is 10.56236. The most important predictors to the random forest are inspection purpose, description of the establishment, city, business start date, and executive title.
+
+We will now run similar models but using log(number of violations) as our outcome variable.
+
+```{r Linear Regression - Log Number Violations}
+# Model
+linear_log_reg <- lm(log_violations~., data=co_train_set %>% select(-num_violations))
+
+# Get predictions from linear regression
+lin_log_pred <- predict(linear_log_reg, co_test_set %>% select(-c(log_violations, num_violations)))
+
+# Model accuracy measure is MSE. Get linear MSE.
+lin_log_mse <- mean((lin_log_pred - co_test_set$log_violations)^2)
+
+lin_log_mse
+```
+
+We now fit a random forest model to log(number of violations) 
+
+```{r Random Forest Regression - Log Violations}
+# Model
+lin_log_rf = randomForest(formula = log_violations ~ ., data=co_train_set %>% select(-num_violations), ntrees=15)
+
+# Variable Importance Plot
+ggplot(data=lin_log_rf$importance %>% as.data.frame() %>%
+         mutate(name=as.factor(rownames(.))) %>%
+         mutate(name=factor(name, name))) +
+  geom_bar(aes(x=reorder(name, lin_log_rf$importance), y=lin_log_rf$importance), stat="identity") + coord_flip()
+
+# RF predictions
+lin_log_rf_pred <- predict(lin_log_rf, co_test_set %>% select(-c(log_violations, num_violations)), n.trees=15)
+
+# Get MSE for RF model
+rf_lin_log_mse <- mean((lin_log_rf_pred - co_test_set$log_violations)^2)
+
+rf_lin_log_mse
+```
+
+We see similar outcomes with the random forest marginally outperforming a simple linear regression.
+
+
+We will now focus on our binary outcome variable. We define this outcome as whether or not the inspection ended up with a "Inspected & Permitted" designation, or any other designation which would imply some sort of abnormality.
+
+First we build the binary outcome datasets.
+
+```{r Partition Binary Data Set}
+#Creating Binary Indicator for Abnormal Inspection Outcome
+binary_df <- final_df %>% 
+  mutate(outcome=as.factor(ifelse(placard_desc== "Inspected & Permitted", 0, 1))) %>% 
+  select(-c(log_violations, placard_desc, num_violations))
+
+#Examination of Outcome Variable
+prop.table(table(binary_df$outcome))
+table(binary_df$outcome) 
+#Binary Classification Requires Some More Work
+bi_train_set <- binary_df[1:H,] 
+bi_test_set <- binary_df[(H+1):N,]
+
+btrain_lab <- bi_train_set %>% select(outcome) 
+btrain_feat <- bi_train_set %>% select(-outcome) 
+btest_lab <- bi_test_set %>% select(outcome) 
+btest_feat <- bi_test_set %>% select(-outcome) 
+```
+
+We see an extreme imbalance in our data outcomes. Out of all 5187 rows of data, only 35 (0.67%) outcomes were abnormal.
+
+We will attempt to model on this extremely unbalanced set and later use SMOTE methodology to simulate outcome balance. We will use ROC curves and AUC to evaluate our models.
+
+First we use a logistic regression model.
+
+```{r Logistic Regression - Unbalanced Classification, warning=F}
+library(ROCR)
+
+# Model and predictions
+logit_reg <- glm(formula=outcome ~., data = bi_train_set, family = binomial("logit"))
+logit_pred <- predict(logit_reg, btest_feat, type="response") %>% as.data.frame()
+
+# ROCR object
+logit_rocr = prediction(logit_pred, bi_test_set$outcome)
+
+# Get AUC
+logit_auc = performance(logit_rocr, measure = "auc")
+logit_auc@y.values
+
+# Get ROC
+logit_roc = performance(logit_rocr, measure = "tpr", x.measure = "fpr")
+```
+
+Next we use a random forrest classification model.
+
+```{r Random Forrest - Unbalanced Classification}
+# Model
+bin_rf = randomForest(formula = outcome ~ ., data=bi_train_set, ntrees=15)
+
+# Variable Importance Plot
+ggplot(data=bin_rf$importance %>% as.data.frame() %>%
+         mutate(name=as.factor(rownames(.))) %>%
+         mutate(name=factor(name, name))) +
+  geom_bar(aes(x=reorder(name, bin_rf$importance), y=bin_rf$importance), stat="identity") + coord_flip()
+
+# RF predictions
+bin_rf_pred <- predict(bin_rf, bi_test_set %>% select(-outcome), n.trees=15, type = "prob")[, 2]
+
+# ROCR object
+bin_rf_rocr = prediction(bin_rf_pred, bi_test_set$outcome)
+
+# Get AUC
+bin_rf_auc = performance(bin_rf_rocr, measure = "auc")
+bin_rf_auc@y.values
+
+# Get ROC
+bin_rf_roc = performance(bin_rf_rocr, measure = "tpr", x.measure = "fpr")
+```
+
+We will graph the two ROC curves in order to compare the outcomes of the models.
+```{r Unbalanced ROC Graphing}
+plot(logit_roc , col = 2)
+plot(bin_rf_roc, col = 3, add = TRUE)
+legend("bottomright", c("Logistic", "Random Forest"), lty=1, col = c("red", "green"))
+```
+
+The logistic regression model has an AUC under 0.5, making it WORSE than random chance. The random forest does somewhat better with an AUC of 0.5735084.
+
+Because our outcome data is so heavily imbalanced, we want to use over/under sampling methods to train models that could make more interesting models.
+
+First we build our resampled dataset.
+
+```{r Dealing with Class Imbalance with SMOTE}
+library(DMwR)
+
+# Do an 80/20 split on the original binary dataframe for train & test. Will only SMOTE train.
+
+binary_df = binary_df[sample(1:nrow(binary_df)), ] #shuffle
+H_bin = round(nrow(binary_df) * 0.8)
+binary_train = binary_df[1:H_bin, ]
+binary_test = binary_df[(H_bin + 1):nrow(binary_df), ]
+
+#Oversampling minority data by 20% and undersampling majority by 20%
+smoted_df = SMOTE(outcome~., binary_train, perc.over=100, k=5, perc.under=200)
+
+#Did it work?
+nrow(subset(smoted_df, outcome==1))/nrow(smoted_df)  #Balanced Dataset; 
+nrow(smoted_df)
+
+smoted_df <- smoted_df[sample(1:nrow(smoted_df)),] #shuffle
+```
+
+First we must filter out rows and columns that create errors due to scarcity of categorical variable data.
+
+```{r}
+#Remove features with insufficient levels
+smo_col = smoted_df[, sapply(smoted_df, function(x) !((is.factor(x)) & (length(unique(x)) == 1)))] %>% colnames()
+
+smoted_df_final = smoted_df %>% select(smo_col)
+```
+
+We will build logistic regression and random forest models for the SMOTE data.
+
+Because our resampled dataset has so few rows, a risk we run into when trying to test our model on the original (much larger) dataset is that for categorical variables, the original dataset will likely have values that our training (SMOTE) data did not have and therefore cannot use. We will filter these rows out.
+
+```{r Filtering original data for SMOTE model usage}
+
+# First get all columns in smote data. Some may have been removed even earlier and therefore must be removed from larger set too.
+smote_cols = colnames(smoted_df_final)
+
+binary_df_filt = binary_test %>% select(smote_cols)
+
+# Get names of all factor columns in SMOTE set
+factor_cols = colnames(smoted_df_final)[which(sapply(smoted_df_final, is.factor))]
+
+for (c in factor_cols){
+  
+  in_train = smoted_df_final[[c]] %>% unique
+  
+  in_test_and_train = (binary_df_filt[[c]] %>% unique)[(binary_df_filt[[c]] %>% unique) %in% in_train]
+  
+  binary_df_filt = binary_df_filt %>% 
+    filter(get(c) %in% in_test_and_train)
+}
+
+binary_test_feat = binary_df_filt %>% select(-outcome)
+binary_test_outcome = binary_df_filt %>% select(outcome)
+```
+
+
+```{r Logistic Regression - SMOTE Classification, warning=F}
+
+# Model and predictions
+smote_logit_reg <- glm(formula=outcome ~., data = smoted_df_final, family = binomial("logit"))
+smote_logit_pred <- predict(smote_logit_reg, binary_test_feat, type="response") %>% as.data.frame()
+
+# ROCR object
+smote_logit_rocr = prediction(smote_logit_pred, binary_test_outcome)
+
+# Get AUC
+smote_logit_auc = performance(smote_logit_rocr, measure = "auc")
+smote_logit_auc@y.values
+
+# Get ROC
+smote_logit_roc = performance(smote_logit_rocr, measure = "tpr", x.measure = "fpr")
+```
+
+Next we use a random forrest classification model.
+
+```{r Random Forrest - SMOTE Classification}
+# Model
+smote_rf = randomForest(formula = outcome ~ ., data=smoted_df_final, ntrees=15)
+
+# Variable Importance Plot
+ggplot(data=smote_rf$importance %>% as.data.frame() %>%
+         mutate(name=as.factor(rownames(.))) %>%
+         mutate(name=factor(name, name))) +
+  geom_bar(aes(x=reorder(name, smote_rf$importance), y=smote_rf$importance), stat="identity") + coord_flip()
+
+# RF predictions
+smote_rf_pred <- predict(smote_rf, binary_test_feat, n.trees=15, type = "prob")[, 2]
+
+# ROCR object
+smote_rf_rocr = prediction(smote_rf_pred, binary_test_outcome)
+
+# Get AUC
+smote_rf_auc = performance(smote_rf_rocr, measure = "auc")
+smote_rf_auc@y.values
+
+# Get ROC
+smote_rf_roc = performance(smote_rf_rocr, measure = "tpr", x.measure = "fpr")
+```
+
+Interestingly, on the SMOTE dataset, the random forest has different top important variables like Utilities Expense and Rent Expense.
+
+We will graph the two ROC curves in order to compare the outcomes of the models.
+```{r SMOTE ROC Graphing}
+plot(smote_logit_roc , col = 2)
+plot(smote_rf_roc, col = 3, add = TRUE)
+legend("bottomright", c("SMOTE Logistic", "SMOTE Random Forest"), lty=1, col = c("red", "green"))
+```
+
+Let's look into comparisons of sensitivity. Because SMOTE oversamples positive values, it should do a better job of detecting positives.
+
+```{r}
+rf_sens = performance(bin_rf_rocr, measure = "sens")
+smote_rf_sens = performance(smote_rf_rocr, measure = "sens")
+
+library(ggplot2)
+rf_x = rf_sens@x.values[[1]]
+rf_y = rf_sens@y.values[[1]]
+rf_df = data.frame(cutoff = rf_x, sensitivity = rf_y)
+
+smote_rf_x = smote_rf_sens@x.values[[1]]
+smote_rf_y = smote_rf_sens@y.values[[1]]
+smote_rf_df = data.frame(cutoff = smote_rf_x, sensitivity = smote_rf_y)
+
+ggplot() + 
+  geom_line(data = rf_df, mapping = aes(x = cutoff, y = sensitivity), color = "red")+
+  geom_line(data = smote_rf_df, mapping = aes(x = cutoff, y = sensitivity), color = "blue", linetype="longdash") + 
+  labs(title = "Random Forest Sensitivity: Original vs SMOTE data") +
+  theme_classic()
+```
+

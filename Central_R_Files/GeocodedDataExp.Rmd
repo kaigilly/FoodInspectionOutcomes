@@ -1,0 +1,81 @@
+---
+title: "GeoCoded Data Exploration"
+author: "Matty Samach"
+date: "12/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+#setwd("Dropbox/Documents/CMU/Classes/Fall 2019/Applied ML/Project/Data/GeoCoded/")
+
+# Get list of unique restaurant addresses from inspection data
+insp_restaurants = read.delim("Inspections_Geocoded.txt", stringsAsFactors = F) %>% select(Match_addr, USER_id)
+insp_restaurants = insp_restaurants %>% rename(restaurant = USER_id) %>% distinct()
+```
+
+```{r Inspection restaurants}
+insp_groups = insp_restaurants %>% group_by(Match_addr) %>% 
+  summarise(num_restaurants = n())
+  
+insp_groups %>% arrange(desc(num_restaurants))
+```
+There are 529 rows that don't have an address at all. Will exclude this one and explore the distribution more deeply.
+
+```{r}
+insp_summaries = insp_groups %>% filter(Match_addr != "") %>% 
+  group_by(num_restaurants) %>% summarize(count=n())
+
+insp_summaries %>% arrange(count)
+```
+
+Within the inspectiond ataset only, there are 5274 addresses that correspond to only one restaurant. Will now extract only these locations.
+
+```{r extract unique inspections}
+insp_unique_addr = insp_groups %>% filter(num_restaurants == 1) %>% select(Match_addr)
+```
+
+Will now bring in the ReferenceUSA Business data and merge it to these unique addresses. Will then have to check again for multiple addresses per business and filter them out.
+
+```{r RefUSABusinesses}
+refUSA = read.delim("Businesses_Geocoded.txt", stringsAsFactors = F) %>% select(Match_addr, USER_Business_ID)
+refUSA = refUSA %>% rename(bus_id = USER_Business_ID) %>% distinct()
+```
+
+```{r}
+joined = insp_unique_addr %>% left_join(refUSA)
+
+joined_grouped = joined %>% group_by(Match_addr) %>% 
+  summarize(num_restaurants = n()) %>% arrange(desc(num_restaurants))
+```
+
+```{r}
+joined_summary = joined_grouped %>% group_by(num_restaurants) %>% 
+  summarize(count = n())
+```
+
+After left joining inspection restaurants to ReferenceUSA businesses, there are 4199 addresses that only correspond to one restaurant. Will only take these addresses now.
+
+```{r}
+unq_rstrnts = joined_grouped %>% filter(num_restaurants == 1) %>% select(Match_addr)
+```
+
+Now will join this list of total unique restaurants back to referenceUSA data to check how many of them do actually correspond to a refUSA data point
+
+```{r}
+usable_rows = unq_rstrnts %>% inner_join(refUSA) %>% inner_join(insp_restaurants)
+
+nrow(usable_rows)
+
+write.csv(x = usable_rows, file = "usable_addresses.csv", row.names = F)
+```
+
+There are 1992 total restaurants that include all refUSA data
+
+
